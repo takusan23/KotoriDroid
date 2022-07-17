@@ -11,7 +11,7 @@ android {
     compileSdk = 32
 
     defaultConfig {
-        applicationId= "io.github.takusan23.kotoridroid"
+        applicationId = "io.github.takusan23.kotoridroid"
         minSdk = 21
         targetSdk = 32
         versionCode = 1
@@ -50,6 +50,8 @@ android {
 }
 
 dependencies {
+    // コアライブラリ
+    implementation(project(":kotoricore"))
 
     implementation("androidx.core:core-ktx:1.8.0")
 
@@ -69,6 +71,9 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4:$composeVersion")
     debugImplementation("androidx.compose.ui:ui-tooling:$composeVersion")
     implementation("androidx.compose.material3:material3:1.0.0-alpha14")
+
+    // WorkManager
+    implementation("androidx.work:work-runtime-ktx:2.7.1")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.3")
