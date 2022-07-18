@@ -12,23 +12,15 @@ import java.io.File
  *
  * @param videoFile フィルターをかけたい動画ファイル
  * @param resultFile エンコードしたファイルの保存先
- * @param tempRawDataFile 一時的ファイル保存先
  * @param audioCodec エンコード後の 音声コーデック [MediaFormat.MIMETYPE_AUDIO_OPUS] など
  * @param bitRate ビットレート
  * */
 class AudioProcessor(
     private val videoFile: File,
     private val resultFile: File,
-    private val tempRawDataFile: File,
     private val audioCodec: String? = null,
     private val bitRate: Int? = null,
 ) {
-    /** 一時ファイル保存で使う */
-    private val bufferedOutputStream by lazy { tempRawDataFile.outputStream().buffered() }
-
-    /** 一時ファイル読み出しで使う */
-    private val bufferedInputStream by lazy { tempRawDataFile.inputStream().buffered() }
-
     /** コンテナフォーマットへ格納するやつ */
     private val mediaMuxer by lazy { MediaMuxer(resultFile.path, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4) }
 
@@ -87,6 +79,10 @@ class AudioProcessor(
         // 再生位置など
         val bufferInfo = MediaCodec.BufferInfo()
 
+        // 読み出し済みの位置と時間
+        var totalBytesRead = 0
+        var presentationTime = 0L
+
         while (isActive) {
             // もし -1 が返ってくれば configure() が間違ってる
             val inputBufferId = decodeMediaCodec.dequeueInputBuffer(TIMEOUT_US)
@@ -113,10 +109,55 @@ class AudioProcessor(
             if (outputBufferId >= 0) {
                 // デコード結果をもらう
                 val outputBuffer = decodeMediaCodec.getOutputBuffer(outputBufferId)!!
-                // 生データを一時的に保存する
-                val chunk = ByteArray(bufferInfo.size)
-                outputBuffer[chunk]
-                bufferedOutputStream.write(chunk)
+                val outputSize = bufferInfo.size
+                val buffer = ByteArray(outputSize)
+                outputBuffer[buffer]
+
+                // 生データをエンコードする
+                var prevReadOffset = 0
+                while (isActive) {
+                    val inputBufferId = encodeMediaCodec.dequeueInputBuffer(TIMEOUT_US)
+                    if (inputBufferId >= 0) {
+                        val inputBuffer = encodeMediaCodec.getInputBuffer(inputBufferId)!!
+                        // 書き込む
+                        // 一度に多分入りきらないので prevReadOffset で制御する
+                        inputBuffer.put(buffer, prevReadOffset, outputSize)
+                        encodeMediaCodec.queueInputBuffer(inputBufferId, 0, outputSize, presentationTime, 0)
+                        prevReadOffset += outputSize
+                        totalBytesRead += outputSize
+                        // あんまり分からん
+                        presentationTime = 1000000L * (totalBytesRead / 2) / (samplingRate * channelCount)
+                        // もうない場合
+                        if (prevReadOffset >= outputSize) {
+                            break
+                        }
+                    }
+                    // 出力
+                    val outputBufferId = encodeMediaCodec.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
+                    if (outputBufferId >= 0) {
+                        val outputBuffer = encodeMediaCodec.getOutputBuffer(outputBufferId)!!
+                        if (bufferInfo.size > 1) {
+                            if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
+                                // ファイルに書き込む...
+                                mediaMuxer.writeSampleData(audioTrackIndex, outputBuffer, bufferInfo)
+                            }
+                        } else {
+                            // もう無い！
+                            break
+                        }
+                        // 返却
+                        encodeMediaCodec.releaseOutputBuffer(outputBufferId, false)
+                    } else if (outputBufferId == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED && audioTrackIndex == UNDEFINED_TRACK_INDEX) {
+                        // MediaMuxerへ音声トラックを追加するのはこのタイミングで行う
+                        // 最初だけ
+                        // 音声の場合は多分 MediaExtractor をそのまま入れてもいいはずですが
+                        // 音声コーデックを変更できるようにしたため
+                        val newFormat = encodeMediaCodec.outputFormat
+                        audioTrackIndex = mediaMuxer.addTrack(newFormat)
+                        mediaMuxer.start()
+                    }
+                }
+
                 // 消したほうがいいらしい
                 outputBuffer.clear()
                 // 返却
@@ -127,75 +168,15 @@ class AudioProcessor(
         // デコーダー終了
         decodeMediaCodec.stop()
         decodeMediaCodec.release()
-        bufferedOutputStream.close()
-
-        // 読み出し済みの位置と時間
-        var totalBytesRead = 0
-        var presentationTime = 0L
-
-        /**
-         * 一時的に保存したファイルを読み出して、エンコーダーに入れる。
-         * エンコード結果を[MediaMuxer]へ入れて完成。
-         */
-        while (isActive) {
-            val inputBufferId = encodeMediaCodec.dequeueInputBuffer(TIMEOUT_US)
-            if (inputBufferId >= 0) {
-                // デコードした生データをエンコーダーへ渡す
-                val inputBuffer = encodeMediaCodec.getInputBuffer(inputBufferId)!!
-                val buffer = ByteArray(inputBuffer.capacity())
-                val size = bufferedInputStream.read(buffer)
-                // エンコーダーへ渡す
-                if (size > 0) {
-                    // 書き込む。書き込んだデータは[onOutputBufferAvailable]で受け取れる
-                    inputBuffer.put(buffer, 0, size)
-                    encodeMediaCodec.queueInputBuffer(inputBufferId, 0, size, presentationTime, 0)
-                    totalBytesRead += size
-                    // あんまり分からん
-                    presentationTime = 1000000L * (totalBytesRead / 2) / (samplingRate * channelCount)
-                } else {
-                    // 終了
-                    encodeMediaCodec.queueInputBuffer(inputBufferId, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                }
-            }
-            // 出力
-            val outputBufferId = encodeMediaCodec.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
-            if (outputBufferId >= 0) {
-                val outputBuffer = encodeMediaCodec.getOutputBuffer(outputBufferId)!!
-                if (bufferInfo.size > 1) {
-                    if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
-                        // ファイルに書き込む...
-                        mediaMuxer.writeSampleData(audioTrackIndex, outputBuffer, bufferInfo)
-                    }
-                } else {
-                    // もう無い！
-                    break
-                }
-                // 返却
-                encodeMediaCodec.releaseOutputBuffer(outputBufferId, false)
-            } else if (outputBufferId == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                // MediaMuxerへ音声トラックを追加するのはこのタイミングで行う
-                // 音声の場合は多分 MediaExtractor をそのまま入れてもいいはずですが
-                // 音声コーデックを変更できるようにしたため
-                val newFormat = encodeMediaCodec.outputFormat
-                audioTrackIndex = mediaMuxer.addTrack(newFormat)
-                mediaMuxer.start()
-            }
-        }
-
-        // エンコダー終了
-        println("音声エンコーダー終了")
+        // エンコーダー終了
         encodeMediaCodec.stop()
         encodeMediaCodec.release()
-        bufferedInputStream.close()
 
         // MediaMuxerも終了
         // MediaMuxer#stopでコケる場合、大体MediaFormatのパラメータ不足です。
         // MediaExtractorで出てきたFormatを入れると直ると思います。
         mediaMuxer.stop()
         mediaMuxer.release()
-
-        // 一時ファイルの削除
-        tempRawDataFile.delete()
     }
 
     /** 強制終了時に呼ぶ */
@@ -203,14 +184,11 @@ class AudioProcessor(
     fun stop() {
         decodeMediaCodec?.stop()
         decodeMediaCodec?.release()
-        bufferedOutputStream.close()
         encodeMediaCodec?.stop()
         encodeMediaCodec?.release()
-        bufferedInputStream.close()
         currentMediaExtractor?.release()
         mediaMuxer.stop()
         mediaMuxer.release()
-        tempRawDataFile.delete()
     }
 
     companion object {

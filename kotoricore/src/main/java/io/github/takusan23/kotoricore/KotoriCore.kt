@@ -28,7 +28,6 @@ class KotoriCore(
         AudioProcessor(
             videoFile = videoFileData.videoFile,
             resultFile = videoFileData.encodedAudioFile,
-            tempRawDataFile = videoFileData.tempAudioFile,
             audioCodec = audioEncoderData.codecName,
             bitRate = audioEncoderData.bitRate
         )

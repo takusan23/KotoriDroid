@@ -15,10 +15,6 @@ interface VideoFileInterface {
     /** 一時保存先 */
     val tempWorkFolder: File
 
-    /** 音声の一時保存先 */
-    val tempAudioFile: File
-        get() = File(tempWorkFolder, TEMP_RAW_AUDIO_FILE).apply { createNewFile() }
-
     /** エンコードした音声の保存先 */
     val encodedAudioFile: File
         get() = File(tempWorkFolder, TEMP_AUDIO_FILE).apply { createNewFile() }
