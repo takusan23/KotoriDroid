@@ -10,18 +10,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import io.github.takusan23.kotoricore.gl.FragmentShaderTypes
 import io.github.takusan23.kotoridroid.R
-import io.github.takusan23.kotoridroid.tool.EncoderCodecTypes
 
 /**
- * 動画コーデック選択のやつ
+ * 動画にフィルターつけるやつ
  */
 @ExperimentalMaterial3Api
 @Composable
-fun CodecMenu(
+fun FilterMenu(
     modifier: Modifier = Modifier,
-    value: EncoderCodecTypes,
-    onValueChange: (EncoderCodecTypes) -> Unit,
+    value: FragmentShaderTypes,
+    onValueChange: (FragmentShaderTypes) -> Unit,
 ) {
     val isOpen = remember { mutableStateOf(false) }
 
@@ -38,7 +38,7 @@ fun CodecMenu(
             expanded = isOpen.value,
             onDismissRequest = { isOpen.value = false }
         ) {
-            EncoderCodecTypes.values().forEach { codec ->
+            FragmentShaderTypes.values().forEach { codec ->
                 DropdownMenuItem(
                     text = { Text(text = codec.name) },
                     onClick = {

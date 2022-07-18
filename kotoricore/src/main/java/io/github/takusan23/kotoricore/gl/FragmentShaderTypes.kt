@@ -6,7 +6,7 @@ package io.github.takusan23.kotoricore.gl
  *
  * @param fragmentShaderCode フラグメントシェーダー
  */
-enum class FragmentShaders(val fragmentShaderCode: String) {
+enum class FragmentShaderTypes(val fragmentShaderCode: String) {
 
     /** デフォルト */
     DEFAULT("""

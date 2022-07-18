@@ -10,10 +10,10 @@ import java.nio.ByteOrder
 /**
  * OpenGLで映像にエフェクトをかける
  *
- * @param fragmentShaders 映像にエフェクトをかける GLSL言語 のシェーダー
+ * @param fragmentShaderTypes 映像にエフェクトをかける GLSL言語 のシェーダー
  */
 class TextureRenderer(
-    private val fragmentShaders: FragmentShaders = FragmentShaders.DEFAULT,
+    private val fragmentShaderTypes: FragmentShaderTypes = FragmentShaderTypes.DEFAULT,
 ) {
 
     private val FLOAT_SIZE_BYTES = 4
@@ -90,7 +90,7 @@ class TextureRenderer(
     }
 
     fun surfaceCreated() {
-        mProgram = createProgram(VERTEX_SHADER, fragmentShaders.fragmentShaderCode)
+        mProgram = createProgram(VERTEX_SHADER, fragmentShaderTypes.fragmentShaderCode)
         if (mProgram == 0) {
             throw RuntimeException("failed creating program")
         }

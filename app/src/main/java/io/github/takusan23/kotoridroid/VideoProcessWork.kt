@@ -14,7 +14,7 @@ import io.github.takusan23.kotoricore.KotoriCore
 import io.github.takusan23.kotoricore.data.AudioEncoderData
 import io.github.takusan23.kotoricore.data.VideoEncoderData
 import io.github.takusan23.kotoricore.data.VideoUriData
-import io.github.takusan23.kotoricore.gl.FragmentShaders
+import io.github.takusan23.kotoricore.gl.FragmentShaderTypes
 import io.github.takusan23.kotoridroid.tool.EncoderCodecTypes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -54,6 +54,8 @@ class VideoProcessWork(private val appContext: Context, params: WorkerParameters
         val uri = inputData.getString(VIDEO_URI)!!.toUri()
         val encodeCodecType = inputData.getInt(ENCODER_CODEC_TYPE_INDEX, 0)
             .let { index -> EncoderCodecTypes.values()[index] }
+        val fragmentShaderTypes = inputData.getInt(FRAGMENT_SHADER_TYPE_INDEX, 0)
+            .let { index -> FragmentShaderTypes.values()[index] }
         val fileName = inputData.getString(RESULT_FILE_NAME)?.ifEmpty { null } ?: System.currentTimeMillis().toString()
         val fileExtension = when (encodeCodecType) {
             EncoderCodecTypes.VP9_OPUS_WEBM -> "webm"
@@ -73,7 +75,7 @@ class VideoProcessWork(private val appContext: Context, params: WorkerParameters
             }
         )
         val videoEncoder = VideoEncoderData(
-            fragmentShaders = FragmentShaders.DEFAULT,
+            fragmentShaderTypes = fragmentShaderTypes,
             codecName = when (encodeCodecType) {
                 EncoderCodecTypes.H264_AAC_MP4 -> MediaFormat.MIMETYPE_VIDEO_AVC
                 EncoderCodecTypes.H265_AAC_MP4 -> MediaFormat.MIMETYPE_VIDEO_HEVC
@@ -119,16 +121,24 @@ class VideoProcessWork(private val appContext: Context, params: WorkerParameters
          * @param context [Context]
          * @param videoUri 動画Uri
          * @param resultFileName ファイル名
+         * @param filter 動画にフィルターかける
          * @param codecTypes コーデック
          */
-        fun startWork(context: Context, videoUri: Uri, resultFileName: String, codecTypes: EncoderCodecTypes) {
+        fun startWork(
+            context: Context,
+            videoUri: Uri,
+            resultFileName: String,
+            codecTypes: EncoderCodecTypes,
+            filter: FragmentShaderTypes,
+        ) {
             val videoMergeWork = OneTimeWorkRequestBuilder<VideoProcessWork>()
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .addTag(WORKER_TAG)
                 .setInputData(workDataOf(
                     VIDEO_URI to videoUri.toString(),
                     ENCODER_CODEC_TYPE_INDEX to codecTypes.ordinal,
-                    RESULT_FILE_NAME to resultFileName
+                    RESULT_FILE_NAME to resultFileName,
+                    FRAGMENT_SHADER_TYPE_INDEX to filter.ordinal
                 ))
                 .build()
             WorkManager.getInstance(context).enqueue(videoMergeWork)
@@ -160,6 +170,9 @@ class VideoProcessWork(private val appContext: Context, params: WorkerParameters
 
         /** コーデック、コンテナフォーマット [EncoderCodecTypes] の位置 */
         const val ENCODER_CODEC_TYPE_INDEX = "io.github.takusan23.kotoridroid.VIDEO_PROCESS_WORK.encoder_codec_type_index"
+
+        /** 動画にフィルターかけるやつ、フラグメントシェーダー [FragmentShaderTypes] の位置 */
+        const val FRAGMENT_SHADER_TYPE_INDEX = "io.github.takusan23.kotoridroid.VIDEO_PROCESS_WORK.fragment_shader_type_index"
 
         /** ファイル名 */
         const val RESULT_FILE_NAME = "io.github.takusan23.kotoridroid.VIDEO_PROCESS_WORK.result_file_name"
