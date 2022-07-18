@@ -13,16 +13,18 @@ import java.io.File
  * @param videoFile フィルターをかけたい動画ファイル
  * @param resultFile エンコードしたファイルの保存先
  * @param audioCodec エンコード後の 音声コーデック [MediaFormat.MIMETYPE_AUDIO_OPUS] など
+ * @param containerFormat コンテナフォーマット [MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4] など
  * @param bitRate ビットレート
  * */
 class AudioProcessor(
     private val videoFile: File,
     private val resultFile: File,
     private val audioCodec: String? = null,
+    private val containerFormat: Int? = null,
     private val bitRate: Int? = null,
 ) {
     /** コンテナフォーマットへ格納するやつ */
-    private val mediaMuxer by lazy { MediaMuxer(resultFile.path, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4) }
+    private val mediaMuxer by lazy { MediaMuxer(resultFile.path, containerFormat ?: MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4) }
 
     /** データを取り出すやつ */
     private var currentMediaExtractor: MediaExtractor? = null
@@ -51,7 +53,7 @@ class AudioProcessor(
         val channelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
 
         // デコード用（aac -> 生データ）MediaCodec
-        decodeMediaCodec = MediaCodec.createDecoderByType(encodeMimeType).apply {
+        decodeMediaCodec = MediaCodec.createDecoderByType(decodeMimeType).apply {
             // デコード時は MediaExtractor の MediaFormat で良さそう
             configure(format, null, null, 0)
         }
@@ -59,7 +61,7 @@ class AudioProcessor(
         var audioTrackIndex = UNDEFINED_TRACK_INDEX
 
         // エンコード用（生データ -> aac）MediaCodec
-        encodeMediaCodec = MediaCodec.createEncoderByType(decodeMimeType).apply {
+        encodeMediaCodec = MediaCodec.createEncoderByType(encodeMimeType).apply {
             // エンコーダーにセットするMediaFormat
             val audioMediaFormat = MediaFormat.createAudioFormat(encodeMimeType, samplingRate, channelCount).apply {
                 setInteger(MediaFormat.KEY_BIT_RATE, bitRate ?: 192_000)
@@ -120,8 +122,7 @@ class AudioProcessor(
                     if (inputBufferId >= 0) {
                         val inputBuffer = encodeMediaCodec.getInputBuffer(inputBufferId)!!
                         // 書き込む
-                        // 一度に多分入りきらないので prevReadOffset で制御する
-                        inputBuffer.put(buffer, prevReadOffset, outputSize)
+                        inputBuffer.put(buffer, 0, outputSize)
                         encodeMediaCodec.queueInputBuffer(inputBufferId, 0, outputSize, presentationTime, 0)
                         prevReadOffset += outputSize
                         totalBytesRead += outputSize
@@ -137,8 +138,9 @@ class AudioProcessor(
                     if (outputBufferId >= 0) {
                         val outputBuffer = encodeMediaCodec.getOutputBuffer(outputBufferId)!!
                         if (bufferInfo.size > 1) {
-                            if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
+                            if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0 && audioTrackIndex != UNDEFINED_TRACK_INDEX) {
                                 // ファイルに書き込む...
+                                // MediaMuxer へ addTrack した後
                                 mediaMuxer.writeSampleData(audioTrackIndex, outputBuffer, bufferInfo)
                             }
                         } else {
@@ -182,13 +184,18 @@ class AudioProcessor(
     /** 強制終了時に呼ぶ */
     @Suppress("BlockingMethodInNonBlockingContext")
     fun stop() {
-        decodeMediaCodec?.stop()
-        decodeMediaCodec?.release()
-        encodeMediaCodec?.stop()
-        encodeMediaCodec?.release()
-        currentMediaExtractor?.release()
-        mediaMuxer.stop()
-        mediaMuxer.release()
+        // すでにstopしてると例外を投げるので
+        try {
+            decodeMediaCodec?.stop()
+            decodeMediaCodec?.release()
+            encodeMediaCodec?.stop()
+            encodeMediaCodec?.release()
+            currentMediaExtractor?.release()
+            mediaMuxer.stop()
+            mediaMuxer.release()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     companion object {

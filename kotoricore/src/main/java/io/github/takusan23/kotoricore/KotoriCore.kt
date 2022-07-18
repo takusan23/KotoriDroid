@@ -29,6 +29,7 @@ class KotoriCore(
             videoFile = videoFileData.videoFile,
             resultFile = videoFileData.encodedAudioFile,
             audioCodec = audioEncoderData.codecName,
+            containerFormat = videoFileData.containerFormat,
             bitRate = audioEncoderData.bitRate
         )
     }
@@ -38,9 +39,10 @@ class KotoriCore(
         VideoProcessor(
             videoFile = videoFileData.videoFile,
             resultFile = videoFileData.encodedVideoFile,
+            videoCodec = videoEncoderData.codecName,
+            containerFormat = videoFileData.containerFormat,
             bitRate = videoEncoderData.bitRate,
             frameRate = videoEncoderData.frameRate,
-            videoCodec = videoEncoderData.codecName,
             videoWidth = videoEncoderData.width,
             videoHeight = videoEncoderData.height
         )
@@ -57,7 +59,7 @@ class KotoriCore(
         // 音声と映像をコンテナフォーマットへ
         MediaMuxerTool.mixed(
             resultFile = videoFileData.outputFile,
-            containerFormat = videoFileData.format,
+            containerFormat = videoFileData.containerFormat,
             mergeFileList = listOf(videoFileData.encodedAudioFile, videoFileData.encodedVideoFile)
         )
         // 一時ファイルを消して完成

@@ -1,14 +1,16 @@
 package io.github.takusan23.kotoricore.processor
 
 import android.media.*
-import io.github.takusan23.kotoricore.gl.CodecInputSurface
+import io.github.takusan23.kotoricore.gl.CodecInputGLSLFilterSurface
+import io.github.takusan23.kotoricore.gl.FragmentShaders
+import io.github.takusan23.kotoricore.gl.TextureRenderer
 import io.github.takusan23.kotoricore.tool.MediaExtractorTool
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * OpenGLを利用して動画へフィルターをかける
+ * OpenGLを利用して動画へエフェクトをかける
  *
  * 動画の解像度とかを変えられます...
  *
@@ -17,15 +19,19 @@ import java.io.File
  * @param bitRate ビットレート。何故か取れなかった
  * @param frameRate フレームレート。何故か取れなかった
  * @param videoCodec エンコード後の動画コーデック [MediaFormat.MIMETYPE_VIDEO_AVC] など
+ * @param containerFormat コンテナフォーマット [MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4] など
+ * @param fragmentShaders エフェクトをかけるための フラグメントシェーダー
  * @param videoHeight 動画の高さを変える場合は変えられます。16の倍数であることが必須です
  * @param videoWidth 動画の幅を変える場合は変えられます。16の倍数であることが必須です
  * */
 class VideoProcessor(
     private val videoFile: File,
     private val resultFile: File,
+    private val videoCodec: String? = null,
+    private val containerFormat: Int? = null,
+    private val fragmentShaders: FragmentShaders? = null,
     private val bitRate: Int? = null,
     private val frameRate: Int? = null,
-    private val videoCodec: String? = null,
     private val videoWidth: Int? = null,
     private val videoHeight: Int? = null,
 ) {
@@ -39,10 +45,10 @@ class VideoProcessor(
     private var decodeMediaCodec: MediaCodec? = null
 
     /** コンテナフォーマットへ格納するやつ */
-    private val mediaMuxer by lazy { MediaMuxer(resultFile.path, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4) }
+    private val mediaMuxer by lazy { MediaMuxer(resultFile.path, containerFormat ?: MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4) }
 
     /** OpenGL */
-    private var codecInputSurface: CodecInputSurface? = null
+    private var codecInputGLSLFilterSurface: CodecInputGLSLFilterSurface? = null
 
     /** 処理を始める、終わるまで一時停止します */
     @Suppress("BlockingMethodInNonBlockingContext")
@@ -80,14 +86,17 @@ class VideoProcessor(
         }
 
         // エンコーダーのSurfaceを取得して、OpenGLで加工します
-        codecInputSurface = CodecInputSurface(encodeMediaCodec!!.createInputSurface())
-        codecInputSurface?.makeCurrent()
+        codecInputGLSLFilterSurface = CodecInputGLSLFilterSurface(
+            encodeMediaCodec!!.createInputSurface(),
+            TextureRenderer(fragmentShaders ?: FragmentShaders.DEFAULT)
+        )
+        codecInputGLSLFilterSurface?.makeCurrent()
         encodeMediaCodec!!.start()
 
         // デコード用（H.264 -> 生データ）MediaCodec
-        codecInputSurface?.createRender()
+        codecInputGLSLFilterSurface?.createRender()
         decodeMediaCodec = MediaCodec.createDecoderByType(decodeMimeType).apply {
-            configure(format, codecInputSurface!!.surface, null, 0)
+            configure(format, codecInputGLSLFilterSurface!!.drawSurface, null, 0)
         }
         decodeMediaCodec?.start()
 
@@ -131,6 +140,7 @@ class VideoProcessor(
                     val encodedData = encodeMediaCodec.getOutputBuffer(encoderStatus)!!
                     if (bufferInfo.size > 1) {
                         if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
+                            // MediaMuxer へ addTrack した後
                             mediaMuxer.writeSampleData(videoTrackIndex, encodedData, bufferInfo)
                         } else if (videoTrackIndex == UNDEFINED_TRACK_INDEX) {
                             // MediaMuxerへ映像トラックを追加するのはこのタイミングで行う
@@ -152,19 +162,20 @@ class VideoProcessor(
                 if (outputBufferId == MediaCodec.INFO_TRY_AGAIN_LATER) {
                     decoderOutputAvailable = false
                 } else if (outputBufferId >= 0) {
+                    // 進捗
                     val doRender = bufferInfo.size != 0
                     decodeMediaCodec.releaseOutputBuffer(outputBufferId, doRender)
                     if (doRender) {
                         var errorWait = false
                         try {
-                            codecInputSurface?.awaitNewImage()
+                            codecInputGLSLFilterSurface?.awaitNewImage()
                         } catch (e: Exception) {
                             errorWait = true
                         }
                         if (!errorWait) {
-                            codecInputSurface?.drawImage()
-                            codecInputSurface?.setPresentationTime(bufferInfo.presentationTimeUs * 1000)
-                            codecInputSurface?.swapBuffers()
+                            codecInputGLSLFilterSurface?.drawImage()
+                            codecInputGLSLFilterSurface?.setPresentationTime(bufferInfo.presentationTimeUs * 1000)
+                            codecInputGLSLFilterSurface?.swapBuffers()
                         }
                     }
                     if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
@@ -179,7 +190,7 @@ class VideoProcessor(
         decodeMediaCodec.stop()
         decodeMediaCodec.release()
         // OpenGL開放
-        codecInputSurface?.release()
+        codecInputGLSLFilterSurface?.release()
         // エンコーダー終了
         encodeMediaCodec.stop()
         encodeMediaCodec.release()
@@ -190,14 +201,19 @@ class VideoProcessor(
 
     /** 強制終了時に呼ぶ */
     fun stop() {
-        decodeMediaCodec?.stop()
-        decodeMediaCodec?.release()
-        codecInputSurface?.release()
-        encodeMediaCodec?.stop()
-        encodeMediaCodec?.release()
-        currentMediaExtractor?.release()
-        mediaMuxer.stop()
-        mediaMuxer.release()
+        // すでにstopしてると例外を投げるので
+        try {
+            decodeMediaCodec?.stop()
+            decodeMediaCodec?.release()
+            codecInputGLSLFilterSurface?.release()
+            encodeMediaCodec?.stop()
+            encodeMediaCodec?.release()
+            currentMediaExtractor?.release()
+            mediaMuxer.stop()
+            mediaMuxer.release()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     companion object {

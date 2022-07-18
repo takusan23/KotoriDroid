@@ -18,7 +18,7 @@ import java.io.File
  * @param context [Context]
  * @param videoUri 動画Uri
  * @param tempWorkFolder 一時的にファイルを置くためそのためのフォルダ、終了後に削除されます
- * @param format フォーマット [android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4] など
+ * @param containerFormat フォーマット [android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4] など
  * @param resultName ファイル名
  */
 class VideoUriData(
@@ -27,7 +27,7 @@ class VideoUriData(
     private val resultName: String,
     private val folderName: String = "kotori",
     override val tempWorkFolder: File,
-    override val format: Int,
+    override val containerFormat: Int,
 ) : VideoFileInterface {
 
     override val videoFile: File
@@ -44,7 +44,7 @@ class VideoUriData(
     override suspend fun destroy() {
         super.destroy()
         // MediaStoreに登録してコピーしてから消す
-        val mimeType = if (format == MediaMuxer.OutputFormat.MUXER_OUTPUT_WEBM) {
+        val mimeType = if (containerFormat == MediaMuxer.OutputFormat.MUXER_OUTPUT_WEBM) {
             "video/webm"
         } else {
             "video/mp4"

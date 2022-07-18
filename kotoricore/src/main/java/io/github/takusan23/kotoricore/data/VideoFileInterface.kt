@@ -23,8 +23,8 @@ interface VideoFileInterface {
     val encodedVideoFile: File
         get() = File(tempWorkFolder, TEMP_VIDEO_FILE).apply { createNewFile() }
 
-    /** フォーマット [android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4] など  */
-    val format: Int
+    /** コンテナフォーマット [android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4] など  */
+    val containerFormat: Int
 
     /** エンコードされた動画の置き場 */
     val outputFile: File

@@ -7,7 +7,14 @@ import android.opengl.Matrix
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-class TextureRenderer {
+/**
+ * OpenGLで映像にエフェクトをかける
+ *
+ * @param fragmentShaders 映像にエフェクトをかける GLSL言語 のシェーダー
+ */
+class TextureRenderer(
+    private val fragmentShaders: FragmentShaders = FragmentShaders.DEFAULT,
+) {
 
     private val FLOAT_SIZE_BYTES = 4
     private val TRIANGLE_VERTICES_DATA_STRIDE_BYTES = 5 * FLOAT_SIZE_BYTES
@@ -41,42 +48,21 @@ class TextureRenderer {
         }
     """
 
-    private val FRAGMENT_SHADER = """
-        #extension GL_OES_EGL_image_external : require
-        
-        #define R_LUMINANCE 0.298912
-        #define G_LUMINANCE 0.586611
-        #define B_LUMINANCE 0.114478
-        const vec3 monochromeScale = vec3(R_LUMINANCE, G_LUMINANCE, B_LUMINANCE);
-
-        precision mediump float;
-        varying vec2 vTextureCoord;
-        uniform samplerExternalOES sTexture;        
-        
-        void main() {
-            vec4 color = texture2D(sTexture, vTextureCoord);
-            float grayColor = dot(color.rgb, monochromeScale);
-            color = vec4(vec3(grayColor), 1.0);
-            gl_FragColor = vec4(color);
-        }
-    """
-
     private val mMVPMatrix = FloatArray(16)
     private val mSTMatrix = FloatArray(16)
     private var mProgram = 0
-    private var mTextureID = -1234567
     private var muMVPMatrixHandle = 0
     private var muSTMatrixHandle = 0
     private var maPositionHandle = 0
     private var maTextureHandle = 0
     private val rotationAngle = 0
 
+    /** [SurfaceTexture]に渡すID */
+    var textureID = -1234567
+        private set
+
     init {
         Matrix.setIdentityM(mSTMatrix, 0)
-    }
-
-    fun getTextureId(): Int {
-        return mTextureID
     }
 
     fun drawFrame(st: SurfaceTexture) {
@@ -85,7 +71,7 @@ class TextureRenderer {
         GLES20.glUseProgram(mProgram)
         checkGlError("glUseProgram")
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
-        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, mTextureID)
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureID)
         mTriangleVertices.position(TRIANGLE_VERTICES_DATA_POS_OFFSET)
         GLES20.glVertexAttribPointer(maPositionHandle, 3, GLES20.GL_FLOAT, false, TRIANGLE_VERTICES_DATA_STRIDE_BYTES, mTriangleVertices)
         checkGlError("glVertexAttribPointer maPosition")
@@ -104,7 +90,7 @@ class TextureRenderer {
     }
 
     fun surfaceCreated() {
-        mProgram = createProgram(VERTEX_SHADER, FRAGMENT_SHADER)
+        mProgram = createProgram(VERTEX_SHADER, fragmentShaders.fragmentShaderCode)
         if (mProgram == 0) {
             throw RuntimeException("failed creating program")
         }
@@ -130,8 +116,8 @@ class TextureRenderer {
         }
         val textures = IntArray(1)
         GLES20.glGenTextures(1, textures, 0)
-        mTextureID = textures[0]
-        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, mTextureID)
+        textureID = textures[0]
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureID)
         checkGlError("glBindTexture mTextureID")
         GLES20.glTexParameterf(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST.toFloat())
         GLES20.glTexParameterf(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR.toFloat())

@@ -66,7 +66,7 @@ public class CodecInputSurface implements SurfaceTexture.OnFrameAvailableListene
     public void createRender() {
         mTextureRender = new TextureRenderer();
         mTextureRender.surfaceCreated();
-        mSurfaceTexture = new SurfaceTexture(mTextureRender.getTextureId());
+        mSurfaceTexture = new SurfaceTexture(mTextureRender.getTextureID());
         mSurfaceTexture.setOnFrameAvailableListener(this);
         mDrawSurface = new Surface(mSurfaceTexture);
     }

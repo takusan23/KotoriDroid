@@ -14,6 +14,8 @@ import io.github.takusan23.kotoricore.KotoriCore
 import io.github.takusan23.kotoricore.data.AudioEncoderData
 import io.github.takusan23.kotoricore.data.VideoEncoderData
 import io.github.takusan23.kotoricore.data.VideoUriData
+import io.github.takusan23.kotoricore.gl.FragmentShaders
+import io.github.takusan23.kotoridroid.tool.EncoderCodecTypes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
@@ -50,17 +52,41 @@ class VideoProcessWork(private val appContext: Context, params: WorkerParameters
     /** 動画の加工、エンコードを始める */
     private suspend fun startVideoProcess() {
         val uri = inputData.getString(VIDEO_URI)!!.toUri()
+        val encodeCodecType = inputData.getInt(ENCODER_CODEC_TYPE_INDEX, 0)
+            .let { index -> EncoderCodecTypes.values()[index] }
+        val fileName = inputData.getString(RESULT_FILE_NAME)?.ifEmpty { null } ?: System.currentTimeMillis().toString()
+        val fileExtension = when (encodeCodecType) {
+            EncoderCodecTypes.VP9_OPUS_WEBM -> "webm"
+            else -> "mp4"
+        }
+
         // 適当にエンコーダー設定
         val tempFolder = File(appContext.getExternalFilesDir(null), "temp").apply { mkdir() }
         val videoFile = VideoUriData(
             context = appContext,
             videoUri = uri,
-            resultName = "Kotori ${System.currentTimeMillis()}.mp4",
+            resultName = "$fileName.$fileExtension",
             tempWorkFolder = tempFolder,
-            format = MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
+            containerFormat = when (encodeCodecType) {
+                EncoderCodecTypes.VP9_OPUS_WEBM -> MediaMuxer.OutputFormat.MUXER_OUTPUT_WEBM
+                else -> MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
+            }
         )
-        val videoEncoder = VideoEncoderData(MediaFormat.MIMETYPE_VIDEO_AVC)
-        val audioEncoder = AudioEncoderData(MediaFormat.MIMETYPE_AUDIO_AAC)
+        val videoEncoder = VideoEncoderData(
+            fragmentShaders = FragmentShaders.DEFAULT,
+            codecName = when (encodeCodecType) {
+                EncoderCodecTypes.H264_AAC_MP4 -> MediaFormat.MIMETYPE_VIDEO_AVC
+                EncoderCodecTypes.H265_AAC_MP4 -> MediaFormat.MIMETYPE_VIDEO_HEVC
+                EncoderCodecTypes.VP9_OPUS_WEBM -> MediaFormat.MIMETYPE_VIDEO_VP9
+            }
+        )
+        val audioEncoder = AudioEncoderData(
+            codecName = when (encodeCodecType) {
+                EncoderCodecTypes.H264_AAC_MP4 -> MediaFormat.MIMETYPE_AUDIO_AAC
+                EncoderCodecTypes.H265_AAC_MP4 -> MediaFormat.MIMETYPE_AUDIO_AAC
+                EncoderCodecTypes.VP9_OPUS_WEBM -> MediaFormat.MIMETYPE_AUDIO_OPUS
+            }
+        )
         kotoriCore = KotoriCore(videoFile, videoEncoder, audioEncoder)
         // 開始する
         kotoriCore?.start()
@@ -92,14 +118,17 @@ class VideoProcessWork(private val appContext: Context, params: WorkerParameters
          *
          * @param context [Context]
          * @param videoUri 動画Uri
+         * @param resultFileName ファイル名
+         * @param codecTypes コーデック
          */
-        fun startWork(context: Context, videoUri: Uri) {
+        fun startWork(context: Context, videoUri: Uri, resultFileName: String, codecTypes: EncoderCodecTypes) {
             val videoMergeWork = OneTimeWorkRequestBuilder<VideoProcessWork>()
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .addTag(WORKER_TAG)
                 .setInputData(workDataOf(
-                    // 動画のURI
                     VIDEO_URI to videoUri.toString(),
+                    ENCODER_CODEC_TYPE_INDEX to codecTypes.ordinal,
+                    RESULT_FILE_NAME to resultFileName
                 ))
                 .build()
             WorkManager.getInstance(context).enqueue(videoMergeWork)
@@ -128,6 +157,12 @@ class VideoProcessWork(private val appContext: Context, params: WorkerParameters
 
         /** 加工したい動画のURI */
         const val VIDEO_URI = "io.github.takusan23.kotoridroid.VIDEO_PROCESS_WORK.video_uri"
+
+        /** コーデック、コンテナフォーマット [EncoderCodecTypes] の位置 */
+        const val ENCODER_CODEC_TYPE_INDEX = "io.github.takusan23.kotoridroid.VIDEO_PROCESS_WORK.encoder_codec_type_index"
+
+        /** ファイル名 */
+        const val RESULT_FILE_NAME = "io.github.takusan23.kotoridroid.VIDEO_PROCESS_WORK.result_file_name"
 
         /** 通知ID */
         const val NOTIFICATION_ID = 2525
