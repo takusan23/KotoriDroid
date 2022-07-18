@@ -142,17 +142,17 @@ class VideoProcessor(
                         if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
                             // MediaMuxer へ addTrack した後
                             mediaMuxer.writeSampleData(videoTrackIndex, encodedData, bufferInfo)
-                        } else if (videoTrackIndex == UNDEFINED_TRACK_INDEX) {
-                            // MediaMuxerへ映像トラックを追加するのはこのタイミングで行う
-                            // このタイミングでやると固有のパラメーターがセットされたMediaFormatが手に入る(csd-0 とか)
-                            // 映像がぶっ壊れている場合（緑で塗りつぶされてるとか）は多分このあたりが怪しい
-                            val newFormat = encodeMediaCodec.outputFormat
-                            videoTrackIndex = mediaMuxer.addTrack(newFormat)
-                            mediaMuxer.start()
                         }
                     }
                     outputDone = bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
                     encodeMediaCodec.releaseOutputBuffer(encoderStatus, false)
+                } else if (encoderStatus == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    // MediaMuxerへ映像トラックを追加するのはこのタイミングで行う
+                    // このタイミングでやると固有のパラメーターがセットされたMediaFormatが手に入る(csd-0 とか)
+                    // 映像がぶっ壊れている場合（緑で塗りつぶされてるとか）は多分このあたりが怪しい
+                    val newFormat = encodeMediaCodec.outputFormat
+                    videoTrackIndex = mediaMuxer.addTrack(newFormat)
+                    mediaMuxer.start()
                 }
                 if (encoderStatus != MediaCodec.INFO_TRY_AGAIN_LATER) {
                     continue
