@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import io.github.takusan23.kotoricore.gl.FragmentShaderTypes
 import io.github.takusan23.kotoridroid.VideoProcessWork
+import io.github.takusan23.kotoridroid.tool.DisplayConverter
 import io.github.takusan23.kotoridroid.tool.EncoderCodecTypes
 import io.github.takusan23.kotoridroid.ui.component.CodecMenu
 import io.github.takusan23.kotoridroid.ui.component.FilterMenu
@@ -31,6 +32,7 @@ fun HomeScreen() {
     val selectCodec = remember { mutableStateOf(EncoderCodecTypes.H264_AAC_MP4) }
     val selectFilter = remember { mutableStateOf(FragmentShaderTypes.DEFAULT) }
     val fileName = remember { mutableStateOf("") }
+    val videoBitrate = remember { mutableStateOf(VideoProcessWork.DEFAULT_VIDEO_BITRATE.toString()) }
 
     val videoPicker = rememberLauncherForActivityResult(contract = ActivityResultContracts.GetContent(), onResult = { uri ->
         selectUri.value = uri
@@ -58,6 +60,13 @@ fun HomeScreen() {
             label = { Text(text = "エンコード後のファイル名") },
             maxLines = 1
         )
+        OutlinedTextField(
+            value = videoBitrate.value,
+            onValueChange = { videoBitrate.value = it },
+            label = { Text(text = "動画のビットレート (省略可能)") },
+            maxLines = 1
+        )
+        Text(text = DisplayConverter.convert(videoBitrate.value.toIntOrNull() ?: 0))
 
         Button(onClick = {
             videoPicker.launch("video/*")
@@ -69,7 +78,8 @@ fun HomeScreen() {
                 videoUri = selectUri.value!!,
                 resultFileName = fileName.value,
                 codecTypes = selectCodec.value,
-                filter = selectFilter.value
+                filter = selectFilter.value,
+                videoBitrate = videoBitrate.value.toIntOrNull() ?: VideoProcessWork.DEFAULT_VIDEO_BITRATE
             )
         }) { Text(text = "処理を始める") }
     }

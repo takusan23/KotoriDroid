@@ -56,6 +56,7 @@ class VideoProcessWork(private val appContext: Context, params: WorkerParameters
             .let { index -> EncoderCodecTypes.values()[index] }
         val fragmentShaderTypes = inputData.getInt(FRAGMENT_SHADER_TYPE_INDEX, 0)
             .let { index -> FragmentShaderTypes.values()[index] }
+        val videoBitrate = inputData.getInt(VIDEO_BITRATE, DEFAULT_VIDEO_BITRATE)
         val fileName = inputData.getString(RESULT_FILE_NAME)?.ifEmpty { null } ?: System.currentTimeMillis().toString()
         val fileExtension = when (encodeCodecType) {
             EncoderCodecTypes.VP9_OPUS_WEBM -> "webm"
@@ -76,6 +77,7 @@ class VideoProcessWork(private val appContext: Context, params: WorkerParameters
         )
         val videoEncoder = VideoEncoderData(
             fragmentShaderTypes = fragmentShaderTypes,
+            bitRate = videoBitrate,
             codecName = when (encodeCodecType) {
                 EncoderCodecTypes.H264_AAC_MP4 -> MediaFormat.MIMETYPE_VIDEO_AVC
                 EncoderCodecTypes.H265_AAC_MP4 -> MediaFormat.MIMETYPE_VIDEO_HEVC
@@ -122,6 +124,7 @@ class VideoProcessWork(private val appContext: Context, params: WorkerParameters
          * @param videoUri 動画Uri
          * @param resultFileName ファイル名
          * @param filter 動画にフィルターかける
+         * @param videoBitrate 動画のビットレート
          * @param codecTypes コーデック
          */
         fun startWork(
@@ -129,6 +132,7 @@ class VideoProcessWork(private val appContext: Context, params: WorkerParameters
             videoUri: Uri,
             resultFileName: String,
             codecTypes: EncoderCodecTypes,
+            videoBitrate: Int,
             filter: FragmentShaderTypes,
         ) {
             val videoMergeWork = OneTimeWorkRequestBuilder<VideoProcessWork>()
@@ -138,7 +142,8 @@ class VideoProcessWork(private val appContext: Context, params: WorkerParameters
                     VIDEO_URI to videoUri.toString(),
                     ENCODER_CODEC_TYPE_INDEX to codecTypes.ordinal,
                     RESULT_FILE_NAME to resultFileName,
-                    FRAGMENT_SHADER_TYPE_INDEX to filter.ordinal
+                    FRAGMENT_SHADER_TYPE_INDEX to filter.ordinal,
+                    VIDEO_BITRATE to videoBitrate
                 ))
                 .build()
             WorkManager.getInstance(context).enqueue(videoMergeWork)
@@ -174,8 +179,14 @@ class VideoProcessWork(private val appContext: Context, params: WorkerParameters
         /** 動画にフィルターかけるやつ、フラグメントシェーダー [FragmentShaderTypes] の位置 */
         const val FRAGMENT_SHADER_TYPE_INDEX = "io.github.takusan23.kotoridroid.VIDEO_PROCESS_WORK.fragment_shader_type_index"
 
+        /** 動画のビットレート */
+        const val VIDEO_BITRATE = "io.github.takusan23.kotoridroid.VIDEO_PROCESS_WORK.video_bitrate"
+
         /** ファイル名 */
         const val RESULT_FILE_NAME = "io.github.takusan23.kotoridroid.VIDEO_PROCESS_WORK.result_file_name"
+
+        /** デフォルト動画のビットレート */
+        const val DEFAULT_VIDEO_BITRATE = 1_000_000
 
         /** 通知ID */
         const val NOTIFICATION_ID = 2525
