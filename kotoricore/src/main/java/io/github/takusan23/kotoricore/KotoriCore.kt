@@ -1,10 +1,12 @@
 package io.github.takusan23.kotoricore
 
+import android.media.MediaMuxer
 import io.github.takusan23.kotoricore.data.AudioEncoderData
 import io.github.takusan23.kotoricore.data.VideoEncoderData
 import io.github.takusan23.kotoricore.data.VideoFileInterface
 import io.github.takusan23.kotoricore.processor.AudioProcessor
 import io.github.takusan23.kotoricore.processor.VideoProcessor
+import io.github.takusan23.kotoricore.qtfaststat.QtFastStart
 import io.github.takusan23.kotoricore.tool.MediaMuxerTool
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -58,11 +60,27 @@ class KotoriCore(
         videoTask.await()
         audioTask.await()
         // 音声と映像をコンテナフォーマットへ
-        MediaMuxerTool.mixed(
-            resultFile = videoFileData.outputFile,
-            containerFormat = videoFileData.containerFormat,
-            mergeFileList = listOf(videoFileData.encodedAudioFile, videoFileData.encodedVideoFile)
-        )
+        // コンテナフォーマットがmp4の場合は別途処理をする
+        if (videoFileData.containerFormat == MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4) {
+            // とりあえずMixする
+            val tempMixedFile = videoFileData.createCustomFile()
+            MediaMuxerTool.mixed(
+                resultFile = tempMixedFile,
+                containerFormat = videoFileData.containerFormat,
+                mergeFileList = listOf(videoFileData.encodedAudioFile, videoFileData.encodedVideoFile)
+            )
+            // ストリーミング可能な形式のmp4へ変換する
+            // mp4 ファイルのバイナリの中から、 moovブロック を見つけて、そのブロックを先頭に持ってきます
+            // MediaMuxerが作る mp4 は moovブロック が最後に配置されており、再生する際にすべてダウンロードする必要があります
+            // 詳しくは faststart とかで調べてください
+            QtFastStart.fastStart(tempMixedFile, videoFileData.outputFile)
+        } else {
+            MediaMuxerTool.mixed(
+                resultFile = videoFileData.outputFile,
+                containerFormat = videoFileData.containerFormat,
+                mergeFileList = listOf(videoFileData.encodedAudioFile, videoFileData.encodedVideoFile)
+            )
+        }
         // 一時ファイルを消して完成
         videoFileData.destroy()
     }

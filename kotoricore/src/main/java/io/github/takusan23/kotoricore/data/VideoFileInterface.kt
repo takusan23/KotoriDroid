@@ -4,8 +4,6 @@ import java.io.File
 
 /**
  * File でも Uri でも対応できるようにしたもの
- *
- * @param tempWorkFolder 一時保存先で利用できる保存先を
  */
 interface VideoFileInterface {
 
@@ -29,6 +27,17 @@ interface VideoFileInterface {
     /** エンコードされた動画の置き場 */
     val outputFile: File
 
+    /**
+     * ファイルが一時的に別途必要な場合に[File]を作ってくれる関数
+     * [destroy]を呼び出すと削除される
+     *
+     * @param fileName ファイル名
+     * @return [File]
+     */
+    suspend fun createCustomFile(fileName: String = "temp_${System.currentTimeMillis()}"): File {
+        return File(tempWorkFolder, fileName).apply { createNewFile() }
+    }
+
     /** エンコーダー開始前に呼ばれる */
     suspend fun prepare() {
         // do nothing
@@ -42,9 +51,6 @@ interface VideoFileInterface {
     companion object {
         /** 一時映像ファイル保存先 */
         const val TEMP_VIDEO_FILE = "temp_video_file.mp4"
-
-        /** 一時音声ファイル保存先、一旦すべてのファイルをデコードして一つのファイルにする */
-        const val TEMP_RAW_AUDIO_FILE = "temp_raw_audio_file.aac"
 
         /** 一時音声ファイル保存先 */
         const val TEMP_AUDIO_FILE = "temp_audio_file.aac"
